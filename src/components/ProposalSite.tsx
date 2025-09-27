@@ -18,6 +18,8 @@ import { supabase } from "@/integrations/supabase/client";
 import LoveLetterDisplay from "./LoveLetterDisplay";
 import TimelineDisplay from "./TimelineDisplay";
 import CountdownDisplay from "./CountdownDisplay";
+import AdSense from "./AdSense";
+import UpsellPage from "./UpsellPage";
 
 interface Photo {
   url: string;
@@ -36,6 +38,10 @@ interface ProposalData {
   customEndingMessage?: string;
   voiceNoteUrl?: string;
   countdownDate?: Date | string | null;
+  planType?: string;
+  viewCount?: number;
+  viewLimit?: number;
+  expiresAt?: string | null;
 }
 
 type ProposalStep = "intro" | "question1" | "question2" | "question3" | "balloons" | "transition" | "final" | "response-collection" | "response-submitted" | "celebration";
@@ -85,6 +91,36 @@ const ProposalSite = () => {
         }
         
         if (data) {
+          // Check if proposal has expired or reached view limit
+          const now = new Date();
+          const isExpired = data.expires_at && new Date(data.expires_at) < now;
+          const viewsExceeded = data.view_limit && data.view_count >= data.view_limit;
+          
+          if (isExpired || viewsExceeded) {
+            // Show upsell page for expired/over-limit proposals
+            setProposalData({
+              proposerName: '',
+              partnerName: data.partner_name,
+              loveMessage: '',
+              theme: 'romantic-garden',
+              photos: [],
+              planType: 'expired'
+            });
+            return;
+          }
+
+          // Increment view count for non-preview visits
+          if (!isPreview && data.plan_type === 'freemium') {
+            const { error: updateError } = await supabase
+              .from('proposals')
+              .update({ view_count: (data.view_count || 0) + 1 })
+              .eq('id', data.id);
+            
+            if (updateError) {
+              console.error('Error updating view count:', updateError);
+            }
+          }
+
           // Transform database data to component format
           setProposalData({
             proposerName: data.proposer_name,
@@ -97,7 +133,11 @@ const ProposalSite = () => {
             confettiStyle: data.confetti_style,
             customEndingMessage: data.custom_ending_message,
             voiceNoteUrl: data.voice_note_url,
-            countdownDate: data.countdown_date
+            countdownDate: data.countdown_date,
+            planType: data.plan_type,
+            viewCount: data.view_count,
+            viewLimit: data.view_limit,
+            expiresAt: data.expires_at
           });
         }
       } catch (error) {
@@ -106,7 +146,7 @@ const ProposalSite = () => {
     };
     
     loadProposalData();
-  }, [slug]);
+  }, [slug, isPreview]);
 
   // Typing animation effect
   const typeText = (text: string, callback?: () => void) => {
@@ -254,6 +294,20 @@ const ProposalSite = () => {
         />
       );
     }
+  }
+
+  // Show upsell page for expired/over-limit proposals
+  if (proposalData?.planType === 'expired') {
+    const now = new Date();
+    const isExpired = proposalData.expiresAt && new Date(proposalData.expiresAt) < now;
+    const viewsExceeded = proposalData.viewLimit && proposalData.viewCount && proposalData.viewCount >= proposalData.viewLimit;
+    
+    return (
+      <UpsellPage 
+        reason={viewsExceeded ? 'views_exceeded' : 'expired'}
+        partnerName={proposalData.partnerName}
+      />
+    );
   }
 
   if (!proposalData) {

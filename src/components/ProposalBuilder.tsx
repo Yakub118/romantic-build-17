@@ -22,6 +22,8 @@ import ConfettiSelector, { ConfettiStyle } from "./ConfettiSelector";
 import CustomEndingMessage from "./CustomEndingMessage";
 import VoiceNoteUpload from "./VoiceNoteUpload";
 import CountdownEditor from "./CountdownEditor";
+import PlanSelector, { PlanType } from "./PlanSelector";
+import { compressImage } from "@/utils/imageCompression";
 
 interface ProposalResponse {
   id: string;
@@ -48,6 +50,7 @@ interface ProposalData {
   voiceNote: File | null;
   countdownDate: Date | null;
   voiceNoteUrl?: string;
+  planType: PlanType;
 }
 
 const ProposalBuilder = () => {
@@ -69,7 +72,8 @@ const ProposalBuilder = () => {
     confettiStyle: "hearts",
     customEndingMessage: "",
     voiceNote: null,
-    countdownDate: null
+    countdownDate: null,
+    planType: "freemium"
   });
 
   // Check for responses on component mount
@@ -136,17 +140,22 @@ const ProposalBuilder = () => {
     });
     
     try {
-      // Upload photos to Supabase storage
+      // Compress images before upload to save storage space
       const photoData = [];
       
       for (const photo of formData.photos) {
         try {
-          const fileExt = photo.file.name.split('.').pop();
+          // Compress image if it's larger than 1MB
+          const processedFile = photo.file.size > 1024 * 1024 
+            ? await compressImage(photo.file, { maxSizeMB: 1, quality: 0.8 })
+            : photo.file;
+          
+          const fileExt = processedFile.name.split('.').pop();
           const fileName = `proposals/${slug}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
           
           const { error: uploadError } = await supabase.storage
             .from('response-photos')
-            .upload(fileName, photo.file);
+            .upload(fileName, processedFile);
           
           if (uploadError) {
             console.error('Upload error:', uploadError);
@@ -231,7 +240,7 @@ const ProposalBuilder = () => {
         }
       }
       
-      // Store permanently in Supabase
+      // Store permanently in Supabase with plan type
       const { error: dbError } = await supabase
         .from('proposals')
         .insert([{
@@ -246,7 +255,8 @@ const ProposalBuilder = () => {
           confetti_style: formData.confettiStyle,
           custom_ending_message: formData.customEndingMessage || null,
           voice_note_url: voiceNoteUrl,
-          countdown_date: formData.countdownDate ? formData.countdownDate.toISOString() : null
+          countdown_date: formData.countdownDate ? formData.countdownDate.toISOString() : null,
+          plan_type: formData.planType
         }]);
       
       if (dbError) {
@@ -513,6 +523,13 @@ const ProposalBuilder = () => {
                   onCountdownChange={handleCountdownChange}
                   isEnabled={countdownEnabled}
                   onEnabledChange={setCountdownEnabled}
+                />
+
+                <PlanSelector
+                  selectedPlan={formData.planType}
+                  onPlanChange={(plan) => setFormData(prev => ({ ...prev, planType: plan }))}
+                  onProceed={() => {/* Will handle payment/plan upgrade here */}}
+                  isProcessing={false}
                 />
 
                 <div className="flex flex-col gap-3 sm:gap-4">

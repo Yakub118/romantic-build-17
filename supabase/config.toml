@@ -1,1 +1,4 @@
 project_id = "cpukuaxhcwsvqytiazfp"
+
+[functions.cleanup-expired-proposals]
+verify_jwt = false
